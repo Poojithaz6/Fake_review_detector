@@ -10,9 +10,9 @@ app.use(cors());
 app.use(express.json());
 
 
-/* =====================================================
+/* =========================================
    DEFAULT ROUTE
-===================================================== */
+========================================= */
 
 app.get('/', (req, res) => {
 
@@ -21,16 +21,145 @@ app.get('/', (req, res) => {
 });
 
 
-/* =====================================================
-   GET USERS
-===================================================== */
+/* =========================================
+   USER LOGIN
+========================================= */
 
-app.get('/users', (req, res) => {
+app.post('/user/login', (req, res) => {
+
+    const { email, password } = req.body;
 
     const query = `
+
         SELECT *
         FROM User
-        LIMIT 10
+
+        WHERE email = ?
+        AND password = ?
+
+    `;
+
+    db.query(
+
+        query,
+
+        [email, password],
+
+        (err, result) => {
+
+            if (err) {
+
+                console.error(err);
+
+                return res.status(500).send(
+                    "Database error"
+                );
+
+            }
+
+            if (result.length === 0) {
+
+                return res.status(401).json({
+
+                    message:
+                    "Invalid credentials"
+
+                });
+
+            }
+
+            res.json({
+
+                message:
+                "Login successful",
+
+                user: result[0]
+
+            });
+
+        }
+
+    );
+
+});
+
+
+/* =========================================
+   ADMIN LOGIN
+========================================= */
+
+app.post('/admin/login', (req, res) => {
+
+    const { email, password } = req.body;
+
+    const query = `
+
+        SELECT *
+        FROM Admin
+
+        WHERE email = ?
+        AND password = ?
+
+    `;
+
+    db.query(
+
+        query,
+
+        [email, password],
+
+        (err, result) => {
+
+            if (err) {
+
+                console.error(err);
+
+                return res.status(500).send(
+                    "Database error"
+                );
+
+            }
+
+            if (result.length === 0) {
+
+                return res.status(401).json({
+
+                    message:
+                    "Invalid credentials"
+
+                });
+
+            }
+
+            res.json({
+
+                message:
+                "Login successful",
+
+                admin: result[0]
+
+            });
+
+        }
+
+    );
+
+});
+
+
+/* =========================================
+   GET PRODUCTS
+========================================= */
+
+app.get('/products', (req, res) => {
+
+    const query = `
+
+        SELECT *
+        FROM Product
+
+        LIMIT 20
+
     `;
 
     db.query(query, (err, result) => {
@@ -38,8 +167,9 @@ app.get('/users', (req, res) => {
         if (err) {
 
             console.error(err);
+
             return res.status(500).send(
-                "Error fetching users"
+                "Error fetching products"
             );
 
         }
@@ -51,9 +181,75 @@ app.get('/users', (req, res) => {
 });
 
 
-/* =====================================================
-   SUBMIT REVIEW + AI DETECTION
-===================================================== */
+/* =========================================
+   PLACE ORDER
+========================================= */
+
+app.post('/order', (req, res) => {
+
+    const {
+
+        user_id,
+        product_id
+
+    } = req.body;
+
+
+    const query = `
+
+        INSERT INTO Orders
+        (
+            user_id,
+            product_id,
+            order_date
+        )
+
+        VALUES
+        (
+            ?, ?, CURDATE()
+        )
+
+    `;
+
+
+    db.query(
+
+        query,
+
+        [
+            user_id,
+            product_id
+        ],
+
+        (err) => {
+
+            if (err) {
+
+                console.error(err);
+
+                return res.status(500).send(
+                    "Error placing order"
+                );
+
+            }
+
+            res.json({
+
+                message:
+                "Order placed successfully"
+
+            });
+
+        }
+
+    );
+
+});
+
+
+/* =========================================
+   SUBMIT REVIEW
+========================================= */
 
 app.post('/review', (req, res) => {
 
@@ -67,100 +263,73 @@ app.post('/review', (req, res) => {
     } = req.body;
 
 
-    if (
-        !user_id ||
-        !product_id ||
-        !review_text
-    ) {
+    /* -------------------------------------
+       CHECK IF USER ORDERED PRODUCT
+    ------------------------------------- */
 
-        return res.status(400).json({
+    const orderCheck = `
 
-            message:
-            "Missing required fields"
+        SELECT *
+        FROM Orders
 
-        });
-
-    }
-
-
-    /* ---------------------------------------------
-       INSERT REVIEW
-    --------------------------------------------- */
-
-    const reviewQuery = `
-
-        INSERT INTO Review
-        (
-            user_id,
-            product_id,
-            summary,
-            review_text,
-            review_time
-        )
-
-        VALUES
-        (
-            ?, ?, ?, ?, CURDATE()
-        )
+        WHERE user_id = ?
+        AND product_id = ?
 
     `;
 
 
     db.query(
 
-        reviewQuery,
+        orderCheck,
 
         [
             user_id,
-            product_id,
-            summary,
-            review_text
+            product_id
         ],
 
-        (err, result) => {
+        (err, orderResult) => {
 
             if (err) {
 
                 console.error(err);
 
                 return res.status(500).send(
-                    "Error inserting review"
+                    "Database error"
                 );
 
             }
 
 
-            const review_id =
-                result.insertId;
+            if (orderResult.length === 0) {
+
+                return res.status(403).json({
+
+                    message:
+                    "User has not ordered this product"
+
+                });
+
+            }
 
 
-            /* -----------------------------------------
-               AI DETECTION
-            ----------------------------------------- */
+            /* ---------------------------------
+               INSERT REVIEW
+            --------------------------------- */
 
-            const ai =
-                detectFakeReview(
-                    review_text,
-                    5
-                );
+            const reviewQuery = `
 
-
-            /* -----------------------------------------
-               INSERT AI RESULT
-            ----------------------------------------- */
-
-            const aiQuery = `
-
-                INSERT INTO AI_Result
+                INSERT INTO Review
                 (
-                    review_id,
-                    fake_probability,
-                    label
+                    user_id,
+                    product_id,
+                    summary,
+                    review_text,
+                    review_time
                 )
 
                 VALUES
                 (
-                    ?, ?, ?
+                    ?, ?, ?, ?, CURDATE()
                 )
 
             `;
@@ -168,35 +337,102 @@ app.post('/review', (req, res) => {
 
             db.query(
 
-                aiQuery,
+                reviewQuery,
 
                 [
-                    review_id,
-                    ai.score,
-                    ai.label
+
+                    user_id,
+                    product_id,
+                    summary,
+                    review_text
+
                 ],
 
-                (err2) => {
+                (err2, result) => {
 
                     if (err2) {
 
                         console.error(err2);
 
                         return res.status(500).send(
-                            "Error saving AI result"
+                            "Error inserting review"
                         );
 
                     }
 
 
-                    res.json({
+                    const review_id =
+                        result.insertId;
 
-                        message:
-                        "Review submitted successfully",
 
-                        ai_result: ai
+                    /* -----------------------------
+                       AI DETECTION
+                    ----------------------------- */
 
-                    });
+                    const ai =
+                        detectFakeReview(
+                            review_text
+                        );
+
+
+                    /* -----------------------------
+                       INSERT AI RESULT
+                    ----------------------------- */
+
+                    const aiQuery = `
+
+                        INSERT INTO AI_Result
+                        (
+                            review_id,
+                            fake_probability,
+                            label
+                        )
+
+                        VALUES
+                        (
+                            ?, ?, ?
+                        )
+
+                    `;
+
+
+                    db.query(
+
+                        aiQuery,
+
+                        [
+
+                            review_id,
+                            ai.score,
+                            ai.label
+
+                        ],
+
+                        (err3) => {
+
+                            if (err3) {
+
+                                console.error(err3);
+
+                                return res.status(500).send(
+                                    "Error saving AI result"
+                                );
+
+                            }
+
+
+                            res.json({
+
+                                message:
+                                "Review submitted successfully",
+
+                                ai_result: ai
+
+                            });
+
+                        }
+
+                    );
 
                 }
 
@@ -209,60 +445,82 @@ app.post('/review', (req, res) => {
 });
 
 
-/* =====================================================
-   GET REVIEWS + AI RESULTS
-===================================================== */
+/* =========================================
+   ADMIN DASHBOARD REVIEWS
+========================================= */
 
-app.get('/reviews', (req, res) => {
+app.get('/admin/reviews/:company_id', (req, res) => {
+
+    const company_id =
+        req.params.company_id;
+
 
     const query = `
 
         SELECT
 
-            r.review_id,
+            p.product_name,
+
             r.summary,
             r.review_text,
             r.review_time,
 
             a.fake_probability,
-            a.label
+            a.label,
 
-        FROM Review r
+            u.reviewerName
+
+        FROM Product p
+
+        JOIN Review r
+        ON p.product_id =
+           r.product_id
 
         JOIN AI_Result a
-
         ON r.review_id =
            a.review_id
 
-        ORDER BY r.review_id DESC
+        JOIN User u
+        ON r.user_id =
+           u.user_id
 
-        LIMIT 10
+        WHERE p.company_id = ?
+
+        ORDER BY r.review_id DESC
 
     `;
 
 
-    db.query(query, (err, result) => {
+    db.query(
 
-        if (err) {
+        query,
 
-            console.error(err);
+        [company_id],
 
-            return res.status(500).send(
-                "Error fetching reviews"
-            );
+        (err, result) => {
+
+            if (err) {
+
+                console.error(err);
+
+                return res.status(500).send(
+                    "Error fetching admin reviews"
+                );
+
+            }
+
+            res.json(result);
 
         }
 
-        res.json(result);
-
-    });
+    );
 
 });
 
 
-/* =====================================================
+/* =========================================
    START SERVER
-===================================================== */
+========================================= */
 
 app.listen(5000, () => {
 
